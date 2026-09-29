@@ -1,0 +1,75 @@
+{
+  "users": [
+    {
+      "id": "user-demo",
+      "name": "Demo User",
+      "email": "demo@example.com",
+      "password": "$2b$10$Fjuv/BYcTCYl1tXabjgnZOJgt36OcR49z5z2prXDBXb5gjdtllE1u",
+      "createdAt": "2026-09-27T17:46:18.962Z"
+    },
+    {
+      "id": "user-1790686054278",
+      "name": "rahul",
+      "email": "rahul@example.com",
+      "password": "$2b$10$bkAkyscU6h6lfEuOk3kVOuRXbYWVNgj9K5BgoOribmZo8yjWfl/Gu",
+      "createdAt": "2026-09-29T12:47:34.386Z"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-1",
+      "userId": "user-demo",
+      "title": "Finish Java assignment",
+      "description": "Complete the assignment and submit it before the deadline.",
+      "priority": "High",
+      "dueDate": "Tomorrow",
+      "category": "Study",
+      "status": "todo",
+      "createdAt": "2026-09-27T17:46:18.962Z"
+    },
+    {
+      "id": "task-2",
+      "userId": "user-demo",
+      "title": "Call Rahul about project",
+      "description": "Discuss the status and next steps of the project.",
+      "priority": "Medium",
+      "dueDate": null,
+      "category": "Communication",
+      "status": "in-progress",
+      "createdAt": "2026-09-27T17:46:18.962Z"
+    },
+    {
+      "id": "task-3",
+      "userId": "user-demo",
+      "title": "Submit DBMS assignment",
+      "description": "Upload the DBMS assignment before Friday.",
+      "priority": "Medium",
+      "dueDate": "Friday",
+      "category": "Study",
+      "status": "completed",
+      "createdAt": "2026-09-27T17:46:18.962Z"
+    },
+    {
+      "userId": "user-demo",
+      "title": "Finalize delivery checklist",
+      "description": "Complete the final MVP review",
+      "priority": "High",
+      "category": "Work",
+      "dueDate": "Today",
+      "status": "todo",
+      "id": "task-1790531468757",
+      "createdAt": "2026-09-27T17:51:08.757Z"
+    },
+    {
+      "userId": "user-1790686054278",
+      "title": "healtty",
+      "description": "maak eto go for run",
+      "priority": "Medium",
+      "category": "General",
+      "dueDate": "122",
+      "status": "todo",
+      "id": "task-1790686091606",
+      "createdAt": "2026-09-29T12:48:11.606Z"
+    }
+  ]
+}
