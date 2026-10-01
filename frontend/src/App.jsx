@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
+import {
+  AnalyticsPage,
+  CalendarPage,
+  DashboardPage,
+  MyTasksPage,
+  ProfilePage,
+  VoiceAIPage,
+} from './pages';
 
 const defaultForm = {
   name: '',
@@ -16,6 +24,45 @@ const defaultTaskForm = {
   status: 'todo',
 };
 
+const defaultProfile = {
+  age: '',
+  occupation: '',
+  bio: '',
+  interests: [],
+  preferences: '',
+  avatar: '',
+};
+
+const navigation = [
+  { id: 'dashboard', label: 'Dashboard', icon: '◫' },
+  { id: 'tasks', label: 'My Tasks', icon: '☷' },
+  { id: 'voice', label: 'Voice AI', icon: '◉' },
+  { id: 'calendar', label: 'Calendar', icon: '▦' },
+  { id: 'analytics', label: 'Analytics', icon: '⌁' },
+];
+
+const pageIds = [...navigation.map((item) => item.id), 'profile'];
+
+function getPageFromPath() {
+  const pathPage = window.location.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard';
+  return pageIds.includes(pathPage) ? pathPage : 'dashboard';
+}
+
+function readProfile(user) {
+  try {
+    const savedProfile = localStorage.getItem('taskflow_profile');
+    return savedProfile ? { ...defaultProfile, ...JSON.parse(savedProfile) } : {
+      ...defaultProfile,
+      occupation: '',
+      bio: '',
+      interests: [],
+      name: user?.name || '',
+    };
+  } catch {
+    return { ...defaultProfile, name: user?.name || '' };
+  }
+}
+
 function App() {
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState(defaultForm);
@@ -27,13 +74,14 @@ function App() {
     return savedUser ? JSON.parse(savedUser) : null;
   });
   const [token, setToken] = useState(() => localStorage.getItem('taskflow_token') || '');
+  const [profile, setProfile] = useState(() => readProfile(user));
   const [message, setMessage] = useState('');
   const [voiceText, setVoiceText] = useState(
     'Tomorrow I have to finish my Java assignment, call Rahul about the project, and submit the DBMS assignment by Friday.'
   );
   const [isListening, setIsListening] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(getPageFromPath);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const recognitionRef = useRef(null);
   const [isVoiceSupported, setIsVoiceSupported] = useState(false);
 
@@ -43,25 +91,17 @@ function App() {
     () => [
       { label: 'Total tasks', value: summary.total },
       { label: 'To do', value: summary.todo },
-      { label: 'In Progress', value: summary.inProgress },
+      { label: 'In progress', value: summary.inProgress },
       { label: 'Completed', value: summary.completed },
-      { label: 'High Priority', value: summary.highPriority },
+      { label: 'High priority', value: summary.highPriority },
     ],
     [summary]
   );
 
-  const filteredTasks = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
-
-    return tasks.filter((task) => {
-      const matchesQuery = !normalizedQuery || [task.title, task.description, task.category, task.dueDate]
-        .filter(Boolean)
-        .some((field) => String(field).toLowerCase().includes(normalizedQuery));
-
-      const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
-      return matchesQuery && matchesStatus;
-    });
-  }, [tasks, searchQuery, statusFilter]);
+  useEffect(() => {
+    if (!user) return;
+    localStorage.setItem('taskflow_profile', JSON.stringify(profile));
+  }, [profile, user]);
 
   const loadData = async () => {
     if (!token) return;
@@ -77,6 +117,12 @@ function App() {
   useEffect(() => {
     loadData();
   }, [token]);
+
+  useEffect(() => {
+    const handlePopState = () => setCurrentPage(getPageFromPath());
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -161,6 +207,9 @@ function App() {
       localStorage.setItem('taskflow_user', JSON.stringify(result.user));
       setToken(result.token);
       setUser(result.user);
+      setProfile(readProfile(result.user));
+      window.history.replaceState({}, '', '/');
+      setCurrentPage('dashboard');
       setMessage(authMode === 'register' ? 'Account created successfully.' : 'Logged in successfully.');
       setAuthForm(defaultForm);
     } catch (error) {
@@ -225,223 +274,101 @@ function App() {
     setMessage('Logged out successfully.');
   };
 
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">TaskFlow AI</p>
-          <h1>Voice-to-Task Productivity Platform</h1>
-        </div>
-        {isLoggedIn && (
-          <div className="user-actions">
-            <span className="welcome">Hi, {user.name}</span>
-            <button className="secondary-btn" onClick={logout}>Logout</button>
-          </div>
-        )}
-      </header>
+  const navigate = (page) => {
+    const path = page === 'dashboard' ? '/' : `/${page}`;
+    if (window.location.pathname !== path) window.history.pushState({}, '', path);
+    setCurrentPage(page);
+    setSidebarOpen(false);
+  };
 
-      {!isLoggedIn ? (
-        <section className="auth-card panel">
+  const updateProfile = (field, value) => setProfile((current) => ({ ...current, [field]: value }));
+
+  if (!isLoggedIn) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-brand"><span className="brand-mark">T</span><span>TaskFlow <b>AI</b></span></div>
+        <section className="auth-card">
+          <p className="eyebrow">Your work, in flow</p>
+          <h1>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
+          <p className="auth-subtitle">Turn the things on your mind into clear next steps.</p>
           <div className="auth-tabs">
-            <button
-              className={authMode === 'login' ? 'active' : ''}
-              onClick={() => setAuthMode('login')}
-              type="button"
-            >
-              Login
-            </button>
-            <button
-              className={authMode === 'register' ? 'active' : ''}
-              onClick={() => setAuthMode('register')}
-              type="button"
-            >
-              Register
-            </button>
+            <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')} type="button">Login</button>
+            <button className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')} type="button">Register</button>
           </div>
-
           <form onSubmit={handleAuthSubmit} className="auth-form">
             {authMode === 'register' && (
-              <label>
-                Name
-                <input
-                  value={authForm.name}
-                  onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
-                  placeholder="Your name"
-                />
-              </label>
+              <label>Name<input value={authForm.name} onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })} placeholder="Your name" required /></label>
             )}
-
-            <label>
-              Email
-              <input
-                type="email"
-                value={authForm.email}
-                onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-                placeholder="you@example.com"
-              />
-            </label>
-
-            <label>
-              Password
-              <input
-                type="password"
-                value={authForm.password}
-                onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                placeholder="Password"
-              />
-            </label>
-
-            <button type="submit" className="primary-btn">
-              {authMode === 'login' ? 'Login' : 'Create Account'}
-            </button>
+            <label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} placeholder="you@example.com" required /></label>
+            <label>Password<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} placeholder="Password" required /></label>
+            <button type="submit" className="primary-btn">{authMode === 'login' ? 'Login' : 'Create account'}<span aria-hidden="true">→</span></button>
           </form>
         </section>
-      ) : (
-        <main className="dashboard">
-          <section className="stats-grid">
-            {stats.map((stat) => (
-              <div key={stat.label} className="stat-box panel">
-                <span>{stat.label}</span>
-                <strong>{stat.value}</strong>
-              </div>
-            ))}
-          </section>
+        {message && <div className="message-banner" role="status">{message}</div>}
+      </div>
+    );
+  }
 
-          <section className="content-grid">
-            <div className="panel">
-              <h2>Voice Task Input</h2>
-              <form onSubmit={handleVoiceSubmit} className="stacked-form">
-                <div className="voice-toolbar">
-                  <button
-                    type="button"
-                    className={`record-btn ${isListening ? 'listening' : ''}`}
-                    onClick={handleVoiceCapture}
-                    disabled={!isVoiceSupported}
-                    title={isVoiceSupported ? 'Start voice capture' : 'Voice capture is not supported in this browser'}
-                  >
-                    {isListening ? 'Stop recording' : isVoiceSupported ? 'Start recording' : 'Voice not supported'}
-                  </button>
-                </div>
-                <textarea
-                  rows="6"
-                  value={voiceText}
-                  onChange={(e) => setVoiceText(e.target.value)}
-                  placeholder="Speak or paste a voice note..."
-                />
-                <button type="submit" className="primary-btn">Extract tasks</button>
-              </form>
-            </div>
+  const pageTitles = {
+    dashboard: ['Dashboard', 'Your productivity, at a glance'],
+    tasks: ['My Tasks', 'Plan the work. Make it happen.'],
+    voice: ['Voice AI', 'Capture a thought. Let TaskFlow shape it.'],
+    calendar: ['Calendar', 'Your deadlines, all in one view.'],
+    analytics: ['Analytics', 'Understand your productivity over time.'],
+    profile: ['Profile & Settings', 'Make TaskFlow feel like yours.'],
+  };
 
-            <div className="panel">
-              <h2>Create task manually</h2>
-              <form onSubmit={handleTaskSubmit} className="stacked-form">
-                <input
-                  value={taskForm.title}
-                  onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
-                  placeholder="Task title"
-                />
-                <textarea
-                  rows="3"
-                  value={taskForm.description}
-                  onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
-                  placeholder="Description"
-                />
-                <div className="inline-fields">
-                  <select
-                    value={taskForm.priority}
-                    onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
-                  >
-                    <option value="High">High</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Low">Low</option>
-                  </select>
-                  <select
-                    value={taskForm.category}
-                    onChange={(e) => setTaskForm({ ...taskForm, category: e.target.value })}
-                  >
-                    <option value="General">General</option>
-                    <option value="Study">Study</option>
-                    <option value="Communication">Communication</option>
-                    <option value="Work">Work</option>
-                  </select>
-                </div>
-                <input
-                  value={taskForm.dueDate}
-                  onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
-                  placeholder="Due date (e.g. Friday)"
-                />
-                <button type="submit" className="primary-btn">Add task</button>
-              </form>
-            </div>
-          </section>
+  const pageContent = {
+    dashboard: <DashboardPage user={user} profile={profile} tasks={tasks} stats={stats} onNavigate={navigate} onStartRecording={handleVoiceCapture} onStatusChange={handleStatusChange} />,
+    tasks: <MyTasksPage tasks={tasks} taskForm={taskForm} setTaskForm={setTaskForm} onTaskSubmit={handleTaskSubmit} onStatusChange={handleStatusChange} onDeleteTask={handleDeleteTask} />,
+    voice: <VoiceAIPage voiceText={voiceText} setVoiceText={setVoiceText} isListening={isListening} isVoiceSupported={isVoiceSupported} onVoiceCapture={handleVoiceCapture} onVoiceSubmit={handleVoiceSubmit} />,
+    calendar: <CalendarPage tasks={tasks} />,
+    analytics: <AnalyticsPage tasks={tasks} stats={stats} summary={summary} />,
+    profile: <ProfilePage user={user} profile={profile} onProfileChange={updateProfile} onLogout={logout} />,
+  };
 
-          <section className="panel">
-            <div className="board-toolbar">
-              <h2>Task board</h2>
-              <div className="board-filters">
-                <input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search tasks..."
-                />
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="all">All tasks</option>
-                  <option value="todo">To do</option>
-                  <option value="in-progress">In progress</option>
-                  <option value="completed">Completed</option>
-                </select>
-              </div>
-            </div>
+  return (
+    <div className="workspace-shell">
+      {sidebarOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
+      <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`}>
+        <button className="brand" onClick={() => navigate('dashboard')} aria-label="TaskFlow AI dashboard">
+          <span className="brand-mark">T</span><span>TaskFlow <b>AI</b></span>
+        </button>
+        <div className="sidebar-label">Workspace</div>
+        <nav className="main-nav" aria-label="Main navigation">
+          {navigation.map((item) => (
+            <button key={item.id} className={`nav-link ${currentPage === item.id ? 'active' : ''}`} onClick={() => navigate(item.id)}>
+              <span className="nav-icon" aria-hidden="true">{item.icon}</span>{item.label}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <button className={`nav-link ${currentPage === 'profile' ? 'active' : ''}`} onClick={() => navigate('profile')}><span className="nav-icon" aria-hidden="true">⚙</span>Settings</button>
+          <button className="nav-link logout-link" onClick={logout}><span className="nav-icon" aria-hidden="true">↪</span>Logout</button>
+          <button className="sidebar-user" onClick={() => navigate('profile')}>
+            <Avatar name={profile.name || user.name} src={profile.avatar} />
+            <span><strong>{profile.name || user.name}</strong><small>View profile</small></span>
+            <span className="user-more" aria-hidden="true">···</span>
+          </button>
+        </div>
+      </aside>
 
-            <div className="kanban-board">
-              {['todo', 'in-progress', 'completed'].map((status) => (
-                <div key={status} className="kanban-column">
-                  <h3>{status === 'todo' ? 'To do' : status === 'in-progress' ? 'In progress' : 'Completed'}</h3>
-                  {filteredTasks.filter((task) => task.status === status).length === 0 ? (
-                    <div className="empty-column">No tasks</div>
-                  ) : (
-                    filteredTasks
-                      .filter((task) => task.status === status)
-                      .map((task) => (
-                        <div key={task.id} className="task-card">
-                          <div className="task-header">
-                            <h4>{task.title}</h4>
-                            <span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span>
-                          </div>
-                          <p>{task.description || 'No description'}</p>
-                          <div className="meta-row">
-                            <span>{task.category}</span>
-                            <span>{task.dueDate || 'No deadline'}</span>
-                          </div>
-                          <div className="task-actions">
-                            <select
-                              value={task.status}
-                              onChange={(e) => handleStatusChange(task.id, e.target.value)}
-                            >
-                              <option value="todo">To do</option>
-                              <option value="in-progress">In progress</option>
-                              <option value="completed">Completed</option>
-                            </select>
-                            <button className="danger-btn" onClick={() => handleDeleteTask(task.id)} type="button">
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        </main>
-      )}
-
-      {message && <div className="message-banner">{message}</div>}
+      <main className="main-area">
+        <header className="page-header">
+          <button className="mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><span>☰</span></button>
+          <div><p className="eyebrow">TaskFlow AI / Workspace</p><h1>{pageTitles[currentPage][0]}</h1><p className="page-subtitle">{pageTitles[currentPage][1]}</p></div>
+          <button className="header-profile" onClick={() => navigate('profile')} aria-label="Open profile settings"><Avatar name={profile.name || user.name} src={profile.avatar} /><span>{profile.name || user.name}</span><span className="chevron">⌄</span></button>
+        </header>
+        {pageContent[currentPage]}
+      </main>
+      {message && <div className="message-banner" role="status">{message}<button onClick={() => setMessage('')} aria-label="Dismiss message">×</button></div>}
     </div>
   );
+}
+
+function Avatar({ name, src, size = 'regular' }) {
+  const initials = (name || 'TF').trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+  return <span className={`avatar avatar-${size}`}>{src ? <img src={src} alt="" /> : initials}</span>;
 }
 
 export default App;
