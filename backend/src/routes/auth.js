@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { createUser, findUserByEmail } from '../data/store.js';
+import { getJwtSecret } from '../lib/jwt.js';
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ router.post('/register', async (req, res) => {
   }
 
   const user = await createUser({ name, email, password });
-  const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'taskflow-secret', {
+  const token = jwt.sign({ id: user.id, email: user.email }, getJwtSecret(), {
     expiresIn: '7d',
   });
 
@@ -48,7 +49,7 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ message: 'Invalid email or password.' });
   }
 
-  const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'taskflow-secret', {
+  const token = jwt.sign({ id: user.id, email: user.email }, getJwtSecret(), {
     expiresIn: '7d',
   });
 

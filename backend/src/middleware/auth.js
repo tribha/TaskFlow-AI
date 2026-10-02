@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { findUserById } from '../data/store.js';
+import { getJwtSecret } from '../lib/jwt.js';
 
 export async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || '';
@@ -9,8 +10,18 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ message: 'Authentication required.' });
   }
 
+  let secret;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'taskflow-secret');
+    secret = getJwtSecret();
+  } catch (error) {
+    if (error.code === 'JWT_SECRET_MISSING') {
+      return res.status(500).json({ message: 'Server configuration error: JWT_SECRET is required.' });
+    }
+    throw error;
+  }
+
+  try {
+    const decoded = jwt.verify(token, secret);
     const user = await findUserById(decoded.id);
 
     if (!user) {

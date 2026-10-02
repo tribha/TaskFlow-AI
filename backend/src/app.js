@@ -3,8 +3,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import taskRoutes from './routes/tasks.js';
+import { getJwtSecret } from './lib/jwt.js';
 
 dotenv.config();
+getJwtSecret();
 
 const app = express();
 const port = process.env.PORT || 5001;
