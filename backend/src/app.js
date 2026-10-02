@@ -10,8 +10,36 @@ getJwtSecret();
 
 const app = express();
 const port = process.env.PORT || 5001;
+const configuredFrontendOrigin = process.env.FRONTEND_URL
+  ? new URL(process.env.FRONTEND_URL).origin
+  : null;
 
-app.use(cors());
+function isAllowedOrigin(origin) {
+  if (!origin) {
+    return false;
+  }
+
+  if (origin === configuredFrontendOrigin) {
+    return true;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
+
+  try {
+    const parsedOrigin = new URL(origin);
+    return parsedOrigin.origin === origin
+      && parsedOrigin.protocol === 'http:'
+      && ['localhost', '127.0.0.1'].includes(parsedOrigin.hostname);
+  } catch {
+    return false;
+  }
+}
+
+app.use(cors({
+  origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
+}));
 app.use(express.json());
 
 app.get('/api/health', (req, res) => {

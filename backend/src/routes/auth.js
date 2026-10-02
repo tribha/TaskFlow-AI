@@ -1,11 +1,21 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { rateLimit } from 'express-rate-limit';
 import { createUser, findUserByEmail } from '../data/store.js';
 import { getJwtSecret } from '../lib/jwt.js';
 
 const router = express.Router();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const createAuthRateLimiter = () => rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { message: 'Too many authentication attempts. Please try again later.' },
+});
+const registerRateLimiter = createAuthRateLimiter();
+const loginRateLimiter = createAuthRateLimiter();
 
 function isRequestBody(body) {
   return body !== null && typeof body === 'object' && !Array.isArray(body);
@@ -15,7 +25,7 @@ function isValidEmail(email) {
   return email.length <= 254 && emailPattern.test(email);
 }
 
-router.post('/register', async (req, res) => {
+router.post('/register', registerRateLimiter, async (req, res) => {
   if (!isRequestBody(req.body)) {
     return res.status(400).json({ message: 'Request body must be an object.' });
   }
@@ -87,7 +97,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimiter, async (req, res) => {
   if (!isRequestBody(req.body)) {
     return res.status(400).json({ message: 'Request body must be an object.' });
   }
