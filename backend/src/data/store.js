@@ -143,19 +143,27 @@ const fileAddTask = (task) => {
   return newTask;
 };
 
-const fileUpdateTask = (taskId, updates) => {
+const editableTaskFields = ['title', 'description', 'priority', 'category', 'dueDate', 'status'];
+
+const getEditableTaskUpdates = (updates) => Object.fromEntries(
+  editableTaskFields
+    .filter((field) => Object.prototype.hasOwnProperty.call(updates || {}, field))
+    .map((field) => [field, updates[field]]),
+);
+
+const fileUpdateTask = (taskId, userId, updates) => {
   const { tasks } = getLegacyStore();
-  const taskIndex = tasks.findIndex((task) => task.id === taskId);
+  const taskIndex = tasks.findIndex((task) => task.id === taskId && task.userId === userId);
   if (taskIndex === -1) return null;
 
-  tasks[taskIndex] = { ...tasks[taskIndex], ...updates };
+  tasks[taskIndex] = { ...tasks[taskIndex], ...getEditableTaskUpdates(updates) };
   persistLegacyStore();
   return tasks[taskIndex];
 };
 
-const fileDeleteTask = (taskId) => {
+const fileDeleteTask = (taskId, userId) => {
   const { tasks } = getLegacyStore();
-  const taskIndex = tasks.findIndex((task) => task.id === taskId);
+  const taskIndex = tasks.findIndex((task) => task.id === taskId && task.userId === userId);
   if (taskIndex === -1) return false;
 
   tasks.splice(taskIndex, 1);
@@ -272,20 +280,18 @@ export async function addTask(task) {
   return normalizeTask(newTask);
 }
 
-export async function updateTask(taskId, updates) {
+export async function updateTask(taskId, userId, updates) {
   if (!useDatabase()) {
-    return fileUpdateTask(taskId, updates);
+    return fileUpdateTask(taskId, userId, updates);
   }
 
   try {
-    const { userId, createdAt, id, ...safeUpdates } = updates || {};
-
-    const currentTask = await prisma.task.findUnique({ where: { id: taskId } });
+    const currentTask = await prisma.task.findFirst({ where: { id: taskId, userId } });
     if (!currentTask) {
       return null;
     }
 
-    const data = { ...safeUpdates };
+    const data = getEditableTaskUpdates(updates);
 
     if (data.dueDate === undefined) {
       data.dueDate = currentTask.dueDate;
@@ -295,10 +301,15 @@ export async function updateTask(taskId, updates) {
       data.title = currentTask.title;
     }
 
-    const updatedTask = await prisma.task.update({
-      where: { id: taskId },
+    const result = await prisma.task.updateMany({
+      where: { id: taskId, userId },
       data,
     });
+    if (result.count === 0) {
+      return null;
+    }
+
+    const updatedTask = await prisma.task.findFirst({ where: { id: taskId, userId } });
 
     return normalizeTask(updatedTask);
   } catch (error) {
@@ -306,16 +317,16 @@ export async function updateTask(taskId, updates) {
   }
 }
 
-export async function deleteTask(taskId) {
+export async function deleteTask(taskId, userId) {
   if (!useDatabase()) {
-    return fileDeleteTask(taskId);
+    return fileDeleteTask(taskId, userId);
   }
 
   try {
-    await prisma.task.delete({
-      where: { id: taskId },
+    const result = await prisma.task.deleteMany({
+      where: { id: taskId, userId },
     });
-    return true;
+    return result.count > 0;
   } catch (error) {
     return false;
   }

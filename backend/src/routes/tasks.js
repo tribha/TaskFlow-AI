@@ -70,7 +70,11 @@ router.put('/:taskId', async (req, res) => {
     return res.status(404).json({ message: 'Task not found.' });
   }
 
-  const updatedTask = await updateTask(taskId, req.body);
+  const updatedTask = await updateTask(taskId, req.user.id, req.body);
+  if (!updatedTask) {
+    return res.status(404).json({ message: 'Task not found.' });
+  }
+
   return res.json(updatedTask);
 });
 
@@ -83,8 +87,8 @@ router.delete('/:taskId', async (req, res) => {
     return res.status(404).json({ message: 'Task not found.' });
   }
 
-  const deleted = await deleteTask(taskId);
-  return deleted ? res.status(204).send() : res.status(404).json({ message: 'Task could not be deleted.' });
+  const deleted = await deleteTask(taskId, req.user.id);
+  return deleted ? res.status(204).send() : res.status(404).json({ message: 'Task not found.' });
 });
 
 export default router;
