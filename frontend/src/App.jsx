@@ -48,18 +48,67 @@ function getPageFromPath() {
   return pageIds.includes(pathPage) ? pathPage : 'dashboard';
 }
 
-function readProfile(user) {
+function getProfileStorageKey(userId) {
+  return userId ? `taskflow_profile_${userId}` : null;
+}
+
+function loadUserProfile(userId, fallbackName = '') {
+  const storageKey = getProfileStorageKey(userId);
+  if (!storageKey) return { ...defaultProfile, name: fallbackName };
+
   try {
-    const savedProfile = localStorage.getItem('taskflow_profile');
+    const savedProfile = localStorage.getItem(storageKey);
     return savedProfile ? { ...defaultProfile, ...JSON.parse(savedProfile) } : {
       ...defaultProfile,
-      occupation: '',
-      bio: '',
-      interests: [],
-      name: user?.name || '',
+      name: fallbackName,
     };
   } catch {
-    return { ...defaultProfile, name: user?.name || '' };
+    return { ...defaultProfile, name: fallbackName };
+  }
+}
+
+function saveUserProfile(userId, profile) {
+  const storageKey = getProfileStorageKey(userId);
+  if (storageKey) localStorage.setItem(storageKey, JSON.stringify(profile));
+}
+
+function getMicrophoneErrorMessage(error) {
+  switch (error?.name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Microphone access was denied or blocked for this site. Allow microphone access in your browser settings, or type/paste a transcript.';
+    case 'NotFoundError':
+      return 'No microphone was found. Connect a microphone or type/paste a transcript.';
+    case 'NotReadableError':
+    case 'AbortError':
+      return 'The microphone is unavailable or being used by another app. Close other apps using it and try again.';
+    case 'OverconstrainedError':
+      return 'The available microphone does not meet the requested settings. Try another microphone or type/paste a transcript.';
+    case 'InvalidStateError':
+      return 'Voice recognition is already active. Stop the current recording before starting another.';
+    default:
+      return 'Could not start microphone capture. Check your microphone and try again, or type/paste a transcript.';
+  }
+}
+
+function getRecognitionErrorMessage(error) {
+  switch (error) {
+    case 'not-allowed':
+      return 'Microphone access was denied or blocked for this site. Allow microphone access in your browser settings, or type/paste a transcript.';
+    case 'service-not-allowed':
+      return 'The browser blocked its speech recognition service. Check your browser settings or type/paste a transcript.';
+    case 'audio-capture':
+      return 'The microphone could not be accessed. Check that one is connected and not in use by another app.';
+    case 'network':
+      return 'Speech recognition could not reach its service. Check your internet connection and try again.';
+    case 'no-speech':
+      return 'No speech was detected. Try recording again, or type/paste a transcript.';
+    case 'language-not-supported':
+      return 'Speech recognition does not support the selected language in this browser.';
+    case 'aborted':
+      return 'Recording was stopped before speech recognition finished.';
+    default:
+      return 'Speech recognition failed. Try again, or type/paste a transcript.';
   }
 }
 
@@ -74,7 +123,7 @@ function App() {
     return savedUser ? JSON.parse(savedUser) : null;
   });
   const [token, setToken] = useState(() => localStorage.getItem('taskflow_token') || '');
-  const [profile, setProfile] = useState(() => readProfile(user));
+  const [profile, setProfile] = useState(() => loadUserProfile(user?.id, user?.name || ''));
   const [message, setMessage] = useState('');
   const [voiceText, setVoiceText] = useState(
     'Tomorrow I have to finish my Java assignment, call Rahul about the project, and submit the DBMS assignment by Friday.'
@@ -83,6 +132,8 @@ function App() {
   const [currentPage, setCurrentPage] = useState(getPageFromPath);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const recognitionRef = useRef(null);
+  const recordingPhaseRef = useRef('idle');
+  const recordingSessionRef = useRef(0);
   const [isVoiceSupported, setIsVoiceSupported] = useState(false);
 
   const isLoggedIn = Boolean(token && user);
@@ -100,8 +151,8 @@ function App() {
 
   useEffect(() => {
     if (!user) return;
-    localStorage.setItem('taskflow_profile', JSON.stringify(profile));
-  }, [profile, user]);
+    saveUserProfile(user.id, profile);
+  }, [profile, user?.id]);
 
   const loadData = async () => {
     if (!token) return;
@@ -132,64 +183,136 @@ function App() {
     }
 
     setIsVoiceSupported(true);
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-    recognition.continuous = false;
+    return undefined;
+  }, []);
 
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((result) => result[0].transcript)
-        .join(' ');
+  const cancelVoiceCapture = () => {
+    recordingSessionRef.current += 1;
+    recordingPhaseRef.current = 'idle';
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) {
+      recognition.onstart = null;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try {
+        recognition.abort();
+      } catch {}
+    }
+    setIsListening(false);
+  };
 
-      setVoiceText((currentText) => (currentText ? `${currentText} ${transcript}` : transcript));
-    };
+  useEffect(() => {
+    if (currentPage !== 'voice') cancelVoiceCapture();
+  }, [currentPage]);
 
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.onerror = (event) => {
-      const errorMessage = event?.error === 'not-allowed'
-        ? 'Microphone permission was blocked. Please allow microphone access or paste the transcript manually.'
-        : 'Microphone capture failed. Please try again or paste a transcript manually.';
-
-      setMessage(errorMessage);
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-    return () => recognition.stop();
+  useEffect(() => () => {
+    recordingSessionRef.current += 1;
+    recordingPhaseRef.current = 'idle';
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (!recognition) return;
+    recognition.onstart = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    try {
+      recognition.abort();
+    } catch {}
   }, []);
 
   const handleVoiceCapture = async () => {
-    if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
       setMessage('Your browser does not support voice input. Try Chrome or Edge, or paste a transcript manually.');
       return;
     }
 
-    if (!recognitionRef.current) {
-      setMessage('Voice recognition is still initializing.');
+    if (recordingPhaseRef.current === 'requesting') {
+      cancelVoiceCapture();
       return;
     }
 
-    if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
+    if (recordingPhaseRef.current === 'recording') {
+      recordingPhaseRef.current = 'stopping';
+      try {
+        recognitionRef.current?.stop();
+      } catch (error) {
+        setMessage(getMicrophoneErrorMessage(error));
+        cancelVoiceCapture();
+      }
       return;
     }
 
+    if (recordingPhaseRef.current === 'stopping') {
+      setMessage('The current recording is still finishing. Please wait a moment before starting again.');
+      return;
+    }
+
+    const sessionId = recordingSessionRef.current + 1;
+    recordingSessionRef.current = sessionId;
+    recordingPhaseRef.current = 'requesting';
+    setIsListening(true);
+    setMessage('Requesting microphone access...');
+
+    let stream;
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
 
-      recognitionRef.current.start();
-      setIsListening(true);
-      setMessage('Listening... speak now.');
+      if (sessionId !== recordingSessionRef.current) return;
+
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        stream = null;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.continuous = false;
+      recognitionRef.current = recognition;
+
+      recognition.onstart = () => {
+        if (recordingSessionRef.current !== sessionId || recognitionRef.current !== recognition) return;
+        recordingPhaseRef.current = 'recording';
+        setMessage('Listening... speak now.');
+      };
+
+      recognition.onresult = (event) => {
+        if (recordingSessionRef.current !== sessionId || recognitionRef.current !== recognition) return;
+        const transcript = Array.from(event.results)
+          .map((result) => result[0].transcript)
+          .join(' ');
+        setVoiceText((currentText) => (currentText ? `${currentText} ${transcript}` : transcript));
+      };
+
+      recognition.onerror = (event) => {
+        if (recordingSessionRef.current !== sessionId || recognitionRef.current !== recognition) return;
+        setMessage(getRecognitionErrorMessage(event?.error));
+        cancelVoiceCapture();
+      };
+
+      recognition.onend = () => {
+        if (recordingSessionRef.current !== sessionId || recognitionRef.current !== recognition) return;
+        recognitionRef.current = null;
+        recordingPhaseRef.current = 'idle';
+        recordingSessionRef.current += 1;
+        setIsListening(false);
+        setMessage('Recording finished. Review the transcript or record again.');
+      };
+
+      recognition.start();
+      recordingPhaseRef.current = 'recording';
     } catch (error) {
-      setMessage('Microphone permission was blocked. Please allow access or type/paste the transcript manually.');
-      setIsListening(false);
+      if (sessionId === recordingSessionRef.current) {
+        setMessage(getMicrophoneErrorMessage(error));
+        cancelVoiceCapture();
+      }
+    } finally {
+      if (stream) stream.getTracks().forEach((track) => track.stop());
     }
   };
 
@@ -206,8 +329,8 @@ function App() {
       localStorage.setItem('taskflow_token', result.token);
       localStorage.setItem('taskflow_user', JSON.stringify(result.user));
       setToken(result.token);
+      setProfile(loadUserProfile(result.user.id, result.user.name || ''));
       setUser(result.user);
-      setProfile(readProfile(result.user));
       window.history.replaceState({}, '', '/');
       setCurrentPage('dashboard');
       setMessage(authMode === 'register' ? 'Account created successfully.' : 'Logged in successfully.');
@@ -233,6 +356,7 @@ function App() {
 
   const handleVoiceSubmit = async (event) => {
     event.preventDefault();
+    cancelVoiceCapture();
     setMessage('');
 
     try {
@@ -265,6 +389,7 @@ function App() {
   };
 
   const logout = () => {
+    cancelVoiceCapture();
     localStorage.removeItem('taskflow_token');
     localStorage.removeItem('taskflow_user');
     setToken('');
