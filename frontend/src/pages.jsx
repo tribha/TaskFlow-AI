@@ -111,7 +111,7 @@ export function DashboardPage({ user, profile, tasks, stats, onNavigate, onStart
 
       <section className="panel recent-tasks-panel">
         <div className="section-heading"><div><span className="eyebrow">Stay in motion</span><h2>Recent tasks</h2></div><button className="text-action" onClick={() => onNavigate('tasks')}>View all tasks <span aria-hidden="true">→</span></button></div>
-        {recentTasks.length ? <div className="recent-task-list">{recentTasks.map((task) => <TaskCard key={task.id} task={task} onStatusChange={onStatusChange} compact />)}</div> : <div className="empty-state"><span className="empty-icon">☷</span><h3>Your task list starts here</h3><p>Add a task or tell TaskFlow what’s on your mind.</p><button className="secondary-btn" onClick={() => onNavigate('tasks')}>Create your first task</button></div>}
+        {recentTasks.length ? <div className="recent-task-list">{recentTasks.map((task) => <TaskCard key={task.id} task={task} onStatusChange={onStatusChange} compact />)}</div> : <div className="empty-state"><span className="empty-icon">☷</span><h3>No tasks yet</h3><p>Create your first task manually or use Voice AI to capture one.</p><button className="secondary-btn" onClick={() => onNavigate('tasks')}>Create your first task</button></div>}
       </section>
     </div>
   );

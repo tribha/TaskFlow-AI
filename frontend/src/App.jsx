@@ -11,8 +11,8 @@ import {
 
 const defaultForm = {
   name: '',
-  email: 'demo@example.com',
-  password: 'password123',
+  email: '',
+  password: '',
 };
 
 const defaultTaskForm = {
@@ -125,9 +125,7 @@ function App() {
   const [token, setToken] = useState(() => localStorage.getItem('taskflow_token') || '');
   const [profile, setProfile] = useState(() => loadUserProfile(user?.id, user?.name || ''));
   const [message, setMessage] = useState('');
-  const [voiceText, setVoiceText] = useState(
-    'Tomorrow I have to finish my Java assignment, call Rahul about the project, and submit the DBMS assignment by Friday.'
-  );
+  const [voiceText, setVoiceText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [currentPage, setCurrentPage] = useState(getPageFromPath);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -356,11 +354,17 @@ function App() {
 
   const handleVoiceSubmit = async (event) => {
     event.preventDefault();
+    const transcript = voiceText.trim();
+    if (!transcript) {
+      setMessage('Enter or record a transcript before extracting tasks.');
+      return;
+    }
+
     cancelVoiceCapture();
     setMessage('');
 
     try {
-      await api.createVoiceTasks({ transcript: voiceText });
+      await api.createVoiceTasks({ transcript });
       setVoiceText('');
       await loadData();
       setMessage('Voice tasks extracted and saved.');
@@ -417,15 +421,15 @@ function App() {
           <h1>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
           <p className="auth-subtitle">Turn the things on your mind into clear next steps.</p>
           <div className="auth-tabs">
-            <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')} type="button">Login</button>
-            <button className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')} type="button">Register</button>
+            <button className={authMode === 'login' ? 'active' : ''} onClick={() => { setAuthMode('login'); setAuthForm(defaultForm); }} type="button">Login</button>
+            <button className={authMode === 'register' ? 'active' : ''} onClick={() => { setAuthMode('register'); setAuthForm(defaultForm); }} type="button">Register</button>
           </div>
           <form onSubmit={handleAuthSubmit} className="auth-form">
             {authMode === 'register' && (
-              <label>Name<input value={authForm.name} onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })} placeholder="Your name" required /></label>
+              <label>Name<input autoComplete="name" value={authForm.name} onChange={(event) => setAuthForm({ ...authForm, name: event.target.value })} placeholder="Your name" required /></label>
             )}
-            <label>Email<input type="email" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} placeholder="you@example.com" required /></label>
-            <label>Password<input type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} placeholder="Password" required /></label>
+            <label>Email<input type="email" autoComplete="username" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} placeholder="you@example.com" required /></label>
+            <label>Password<input type="password" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} placeholder="Password" required /></label>
             <button type="submit" className="primary-btn">{authMode === 'login' ? 'Login' : 'Create account'}<span aria-hidden="true">→</span></button>
           </form>
         </section>
