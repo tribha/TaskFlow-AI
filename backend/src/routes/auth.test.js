@@ -105,6 +105,18 @@ test('auth routes validate input and preserve secure authentication behavior', a
       assert.equal(tasksResponse.status, 200);
       assert.deepEqual(await tasksResponse.json(), []);
 
+      const summaryResponse = await fetch(`${baseUrl}/api/tasks/summary`, {
+        headers: { authorization: `Bearer ${payload.token}` },
+      });
+      assert.equal(summaryResponse.status, 200);
+      assert.deepEqual(await summaryResponse.json(), {
+        total: 0,
+        todo: 0,
+        inProgress: 0,
+        completed: 0,
+        highPriority: 0,
+      });
+
       const duplicate = await post('register', {
         name: 'Another Name',
         email: ' PERSON.ONE@example.com ',

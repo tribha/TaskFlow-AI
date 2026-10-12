@@ -1,6 +1,6 @@
-import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { prisma } from '../lib/prisma.js';
 
 function resolveStorePath() {
@@ -20,6 +20,20 @@ function asDate(value) {
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
+export function filterDemoFixtureRecords(store) {
+  const demoUserIds = new Set(
+    store.users
+      .filter((user) => user.id === 'user-demo' || String(user.email).trim().toLowerCase() === 'demo@example.com')
+      .map((user) => user.id),
+  );
+  demoUserIds.add('user-demo');
+
+  return {
+    users: store.users.filter((user) => !demoUserIds.has(user.id)),
+    tasks: store.tasks.filter((task) => !demoUserIds.has(task.userId)),
+  };
+}
+
 async function migrateFileStore() {
   if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL must be set before importing the file store.');
@@ -35,7 +49,9 @@ async function migrateFileStore() {
     throw new Error('TaskFlow store is malformed.');
   }
 
-  for (const user of store.users) {
+  const importableStore = filterDemoFixtureRecords(store);
+
+  for (const user of importableStore.users) {
     await prisma.user.upsert({
       where: { id: user.id },
       create: {
@@ -53,7 +69,7 @@ async function migrateFileStore() {
     });
   }
 
-  for (const task of store.tasks) {
+  for (const task of importableStore.tasks) {
     await prisma.task.upsert({
       where: { id: task.id },
       create: {
@@ -79,14 +95,20 @@ async function migrateFileStore() {
     });
   }
 
-  console.log(`Imported ${store.users.length} users and ${store.tasks.length} tasks from ${storePath}.`);
+  console.log(`Imported ${importableStore.users.length} users and ${importableStore.tasks.length} tasks from ${storePath}.`);
 }
 
-migrateFileStore()
-  .catch((error) => {
-    console.error('File store import failed:', error.message);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+const isDirectExecution = process.argv[1]
+  && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+
+if (isDirectExecution) {
+  import('dotenv/config')
+    .then(migrateFileStore)
+    .catch((error) => {
+      console.error('File store import failed:', error.message);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}

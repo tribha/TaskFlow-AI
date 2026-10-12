@@ -58,6 +58,21 @@ test('task routes isolate task reads and mutations by authenticated user', async
       return { response, payload };
     };
 
+    await t.test('newly registered users start with empty task lists and summaries', async () => {
+      for (const user of [userA, userB]) {
+        const tasks = await request(user, 'GET', '/');
+        const summary = await request(user, 'GET', '/summary');
+        assert.deepEqual(tasks.payload, []);
+        assert.deepEqual(summary.payload, {
+          total: 0,
+          todo: 0,
+          inProgress: 0,
+          completed: 0,
+          highPriority: 0,
+        });
+      }
+    });
+
     const { payload: taskA } = await request(userA, 'POST', '/manual', {
       title: 'Task for A',
       userId: userB.user.id,

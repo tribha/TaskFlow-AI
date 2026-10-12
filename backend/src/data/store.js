@@ -26,53 +26,6 @@ const ensureStoreFile = (filePath) => {
   }
 };
 
-const buildSeedData = () => ({
-  users: [
-    {
-      id: 'user-demo',
-      name: 'Demo User',
-      email: 'demo@example.com',
-      password: bcrypt.hashSync('password123', 10),
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  tasks: [
-    {
-      id: 'task-1',
-      userId: 'user-demo',
-      title: 'Finish Java assignment',
-      description: 'Complete the assignment and submit it before the deadline.',
-      priority: 'High',
-      dueDate: 'Tomorrow',
-      category: 'Study',
-      status: 'todo',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 'task-2',
-      userId: 'user-demo',
-      title: 'Call Rahul about project',
-      description: 'Discuss the status and next steps of the project.',
-      priority: 'Medium',
-      dueDate: null,
-      category: 'Communication',
-      status: 'in-progress',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 'task-3',
-      userId: 'user-demo',
-      title: 'Submit DBMS assignment',
-      description: 'Upload the DBMS assignment before Friday.',
-      priority: 'Medium',
-      dueDate: 'Friday',
-      category: 'Study',
-      status: 'completed',
-      createdAt: new Date().toISOString(),
-    },
-  ],
-});
-
 let legacyStore;
 
 const getLegacyStore = () => {
@@ -81,7 +34,6 @@ const getLegacyStore = () => {
   }
 
   const storePath = resolveStorePath();
-  const storeAlreadyExisted = fs.existsSync(storePath);
   ensureStoreFile(storePath);
 
   const raw = fs.readFileSync(storePath, 'utf8');
@@ -90,14 +42,7 @@ const getLegacyStore = () => {
     throw new Error('TaskFlow store is malformed.');
   }
 
-  legacyStore = storeAlreadyExisted ? parsed : { ...buildSeedData(), ...parsed };
-  if (!storeAlreadyExisted && legacyStore.users.length === 0 && legacyStore.tasks.length === 0) {
-    const defaultData = buildSeedData();
-    legacyStore.users = defaultData.users;
-    legacyStore.tasks = defaultData.tasks;
-    fs.writeFileSync(storePath, JSON.stringify(legacyStore, null, 2));
-  }
-
+  legacyStore = parsed;
   return legacyStore;
 };
 
