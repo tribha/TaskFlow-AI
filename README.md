@@ -80,15 +80,17 @@ The system transforms unstructured voice thoughts into organized and actionable 
 
 ## 🎤 1. Voice Task Creation
 
-Users can record their thoughts using the microphone.
+Browser speech recognition provides a live transcript preview in Latin/Roman script. Hindi is transliterated into Romanized Hindi/Hinglish, while English keeps standard spelling; clearly spoken numerical values are formatted as digits, and mixed speech is not translated into a single language. Supported browsers also record audio in memory for an optional server-side transcription fallback.
 
-The application captures the voice input and sends it for transcription.
+Users can review and edit the transcript before choosing **Extract tasks**. **Improve transcript** explicitly sends the completed audio recording to the backend transcription service; audio is never uploaded while recording.
+
+Configure `OPENAI_API_KEY` in `backend/.env` to enable server-side transcription. If the key or service is unavailable, users can keep editing the browser transcript or enter text manually.
 
 ---
 
 ## 📝 2. Speech-to-Text
 
-The recorded audio is converted into text using a speech-recognition service.
+The browser transcript is shown immediately. When browser recognition is unsupported, fails, or produces no usable text, the completed in-memory audio recording can be transcribed through the authenticated backend using OpenAI's Audio Transcriptions API.
 
 Example:
 

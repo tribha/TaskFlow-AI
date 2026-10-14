@@ -8,6 +8,11 @@ import {
   ProfilePage,
   VoiceAIPage,
 } from './pages';
+import {
+  getRecognitionTranscript,
+  romanizeTranscript,
+  transcribeRecording,
+} from './voiceTranscription';
 
 const defaultForm = {
   name: '',
@@ -94,7 +99,7 @@ function getMicrophoneErrorMessage(error) {
 function getRecognitionErrorMessage(error) {
   switch (error) {
     case 'not-allowed':
-      return 'Microphone access was denied or blocked for this site. Allow microphone access in your browser settings, or type/paste a transcript.';
+      return 'Browser speech recognition was blocked. Your microphone recording can still be transcribed after you stop.';
     case 'service-not-allowed':
       return 'The browser blocked its speech recognition service. Check your browser settings or type/paste a transcript.';
     case 'audio-capture':
@@ -109,6 +114,52 @@ function getRecognitionErrorMessage(error) {
       return 'Recording was stopped before speech recognition finished.';
     default:
       return 'Speech recognition failed. Try again, or type/paste a transcript.';
+  }
+}
+
+function getPreferredRecordingMimeType(MediaRecorderConstructor) {
+  if (typeof MediaRecorderConstructor.isTypeSupported !== 'function') return '';
+
+  return [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+    'audio/mp4',
+  ].find((mimeType) => MediaRecorderConstructor.isTypeSupported(mimeType)) || '';
+}
+
+function stopMicrophoneTracks(stream) {
+  stream?.getTracks().forEach((track) => track.stop());
+}
+
+function disposeVoiceSession(session) {
+  if (!session) return;
+  session.cancelled = true;
+  session.chunks.length = 0;
+
+  const recognition = session.recognition;
+  if (recognition) {
+    recognition.onstart = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    try {
+      recognition.abort();
+    } catch {}
+  }
+
+  const recorder = session.recorder;
+  if (recorder && recorder.state !== 'inactive') {
+    recorder.ondataavailable = null;
+    recorder.onstop = () => stopMicrophoneTracks(session.stream);
+    try {
+      recorder.stop();
+    } catch {
+      stopMicrophoneTracks(session.stream);
+    }
+  } else {
+    stopMicrophoneTracks(session.stream);
   }
 }
 
@@ -127,12 +178,20 @@ function App() {
   const [message, setMessage] = useState('');
   const [voiceText, setVoiceText] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [hasRecordedAudio, setHasRecordedAudio] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [currentPage, setCurrentPage] = useState(getPageFromPath);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const recognitionRef = useRef(null);
   const recordingPhaseRef = useRef('idle');
   const recordingSessionRef = useRef(0);
+  const voiceSessionRef = useRef(null);
+  const audioRecordingRef = useRef(null);
+  const isTranscribingRef = useRef(false);
+  const transcriptionRequestRef = useRef(0);
+  const mountedRef = useRef(false);
   const [isVoiceSupported, setIsVoiceSupported] = useState(false);
+  const [isSpeechRecognitionSupported, setIsSpeechRecognitionSupported] = useState(false);
 
   const isLoggedIn = Boolean(token && user);
 
@@ -175,29 +234,22 @@ function App() {
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setIsVoiceSupported(false);
-      return undefined;
-    }
-
-    setIsVoiceSupported(true);
+    const canRecordAudio = Boolean(navigator.mediaDevices?.getUserMedia)
+      && typeof window.MediaRecorder === 'function';
+    setIsSpeechRecognitionSupported(Boolean(SpeechRecognition));
+    setIsVoiceSupported(Boolean(SpeechRecognition || canRecordAudio));
     return undefined;
   }, []);
 
   const cancelVoiceCapture = () => {
     recordingSessionRef.current += 1;
     recordingPhaseRef.current = 'idle';
-    const recognition = recognitionRef.current;
+    const session = voiceSessionRef.current;
+    voiceSessionRef.current = null;
     recognitionRef.current = null;
-    if (recognition) {
-      recognition.onstart = null;
-      recognition.onresult = null;
-      recognition.onerror = null;
-      recognition.onend = null;
-      try {
-        recognition.abort();
-      } catch {}
-    }
+    disposeVoiceSession(session);
+    audioRecordingRef.current = null;
+    setHasRecordedAudio(false);
     setIsListening(false);
   };
 
@@ -205,113 +257,338 @@ function App() {
     if (currentPage !== 'voice') cancelVoiceCapture();
   }, [currentPage]);
 
-  useEffect(() => () => {
-    recordingSessionRef.current += 1;
-    recordingPhaseRef.current = 'idle';
-    const recognition = recognitionRef.current;
-    recognitionRef.current = null;
-    if (!recognition) return;
-    recognition.onstart = null;
-    recognition.onresult = null;
-    recognition.onerror = null;
-    recognition.onend = null;
-    try {
-      recognition.abort();
-    } catch {}
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      recordingSessionRef.current += 1;
+      recordingPhaseRef.current = 'idle';
+      const session = voiceSessionRef.current;
+      voiceSessionRef.current = null;
+      recognitionRef.current = null;
+      disposeVoiceSession(session);
+    };
   }, []);
 
-  const handleVoiceCapture = async () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setMessage('Your browser does not support voice input. Try Chrome or Edge, or paste a transcript manually.');
+  const requestAudioTranscription = async (audioBlob, sessionId, source) => {
+    if (!audioBlob || isTranscribingRef.current) return;
+
+    isTranscribingRef.current = true;
+    setIsTranscribing(true);
+    const requestId = transcriptionRequestRef.current + 1;
+    transcriptionRequestRef.current = requestId;
+    setMessage(source === 'automatic'
+      ? 'Browser recognition did not produce a usable transcript. Transcribing the recorded audio...'
+      : 'Improving transcript from the recorded audio...');
+
+    try {
+      await transcribeRecording(audioBlob, api.transcribeAudio, (transcript) => {
+        if (
+          recordingSessionRef.current === sessionId
+          && audioRecordingRef.current?.sessionId === sessionId
+          && transcriptionRequestRef.current === requestId
+          && mountedRef.current
+        ) {
+          const transcriptBase = source === 'automatic'
+            ? romanizeTranscript(audioRecordingRef.current.transcriptBase)
+            : '';
+          setVoiceText([transcriptBase, transcript].filter(Boolean).join(' '));
+        }
+      });
+
+      if (
+        mountedRef.current
+        && recordingSessionRef.current === sessionId
+        && audioRecordingRef.current?.sessionId === sessionId
+      ) {
+        setMessage('Transcript updated from the recorded audio. Review or edit it before extracting tasks.');
+      }
+    } catch (error) {
+      if (
+        mountedRef.current
+        && recordingSessionRef.current === sessionId
+        && audioRecordingRef.current?.sessionId === sessionId
+      ) {
+        const reason = error instanceof Error && error.message ? ` ${error.message}` : '';
+        setMessage(`Audio transcription failed.${reason} Your existing transcript is unchanged; you can edit it or retry.`);
+      }
+    } finally {
+      if (mountedRef.current && transcriptionRequestRef.current === requestId) {
+        isTranscribingRef.current = false;
+        setIsTranscribing(false);
+      }
+    }
+  };
+
+  const finishVoiceSession = (session) => {
+    if (
+      session.cancelled
+      || session.finalized
+      || recordingSessionRef.current !== session.id
+      || !session.recorderStopped
+      || !session.recognitionEnded
+    ) {
       return;
     }
 
+    session.finalized = true;
+    stopMicrophoneTracks(session.stream);
+    session.stream = null;
+    voiceSessionRef.current = null;
+    recognitionRef.current = null;
+    if (session.recognition) {
+      session.recognition.onstart = null;
+      session.recognition.onresult = null;
+      session.recognition.onerror = null;
+      session.recognition.onend = null;
+      try {
+        session.recognition.abort();
+      } catch {}
+      session.recognition = null;
+    }
+    recordingPhaseRef.current = 'idle';
+    setIsListening(false);
+
+    const chunks = session.chunks.filter((chunk) => chunk.size > 0);
+    const audioBlob = chunks.length
+      ? new Blob(chunks, { type: session.recorder?.mimeType || chunks[0].type || 'audio/webm' })
+      : null;
+
+    if (audioBlob?.size) {
+      audioRecordingRef.current = {
+        blob: audioBlob,
+        sessionId: session.id,
+        transcriptBase: session.transcriptBase,
+      };
+      setHasRecordedAudio(true);
+    } else {
+      audioRecordingRef.current = null;
+      setHasRecordedAudio(false);
+    }
+
+    if (audioBlob && (session.recognitionFailed || !session.recognitionTranscript.trim())) {
+      void requestAudioTranscription(audioBlob, session.id, 'automatic');
+    } else if (!session.recognitionTranscript.trim() && !audioBlob) {
+      setMessage('No transcript or recording was captured. Check browser recognition support, or type/paste a transcript.');
+    } else if (!session.recognitionTranscript.trim()) {
+      setMessage('Recording finished. Review the transcript or record again.');
+    } else {
+      setMessage('Recording finished. Review or edit the transcript before extracting tasks.');
+    }
+
+    session.chunks.length = 0;
+  };
+
+  const handleVoiceCapture = async () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
     if (recordingPhaseRef.current === 'requesting') {
       cancelVoiceCapture();
+      setMessage('Microphone request cancelled.');
       return;
     }
 
     if (recordingPhaseRef.current === 'recording') {
+      const session = voiceSessionRef.current;
       recordingPhaseRef.current = 'stopping';
-      try {
-        recognitionRef.current?.stop();
-      } catch (error) {
-        setMessage(getMicrophoneErrorMessage(error));
-        cancelVoiceCapture();
+      if (session?.recognition) {
+        try {
+          session.recognition.stop();
+        } catch {
+          session.recognitionFailed = true;
+          session.recognitionEnded = true;
+          try {
+            session.recognition.abort();
+          } catch {}
+          session.recognition = null;
+          recognitionRef.current = null;
+        }
+      } else if (session) {
+        session.recognitionEnded = true;
       }
+
+      if (session?.recorder && session.recorder.state !== 'inactive') {
+        try {
+          session.recorder.stop();
+        } catch {
+          session.recorderStopped = true;
+          setMessage('Audio recording could not be finalized. Your browser transcript is still available.');
+          stopMicrophoneTracks(session.stream);
+          session.stream = null;
+        }
+      } else if (session) {
+        session.recorderStopped = true;
+      }
+
+      if (session) finishVoiceSession(session);
       return;
     }
 
     if (recordingPhaseRef.current === 'stopping') {
-      setMessage('The current recording is still finishing. Please wait a moment before starting again.');
+      setMessage('The current recording is still finishing. Please wait before starting another.');
+      return;
+    }
+
+    const canRecordAudio = Boolean(navigator.mediaDevices?.getUserMedia)
+      && typeof window.MediaRecorder === 'function';
+    if (!SpeechRecognition && !canRecordAudio) {
+      setMessage('Voice recording is not supported in this browser. Type or paste a transcript instead.');
       return;
     }
 
     const sessionId = recordingSessionRef.current + 1;
     recordingSessionRef.current = sessionId;
     recordingPhaseRef.current = 'requesting';
+    voiceSessionRef.current = null;
+    audioRecordingRef.current = null;
+    setHasRecordedAudio(false);
     setIsListening(true);
     setMessage('Requesting microphone access...');
 
     let stream;
     try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      if (navigator.mediaDevices?.getUserMedia) {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
 
       if (sessionId !== recordingSessionRef.current) return;
 
+      const session = {
+        id: sessionId,
+        stream: null,
+        recorder: null,
+        recognition: null,
+        chunks: [],
+        recognitionTranscript: '',
+        transcriptBase: voiceText.trim(),
+        recognitionFailed: false,
+        recognitionEnded: !SpeechRecognition,
+        recorderStopped: true,
+        finalized: false,
+        cancelled: false,
+      };
+      voiceSessionRef.current = session;
+      recordingPhaseRef.current = 'recording';
+
+      if (stream && canRecordAudio) {
+        const MediaRecorderConstructor = window.MediaRecorder;
+        const mimeType = getPreferredRecordingMimeType(MediaRecorderConstructor);
+        try {
+          const recorder = mimeType
+            ? new MediaRecorderConstructor(stream, { mimeType })
+            : new MediaRecorderConstructor(stream);
+          session.stream = stream;
+          session.recorder = recorder;
+          session.recorderStopped = false;
+          recorder.ondataavailable = (event) => {
+            if (recordingSessionRef.current !== sessionId || session.cancelled || !event.data?.size) return;
+            session.chunks.push(event.data);
+          };
+          recorder.onstop = () => {
+            if (recordingSessionRef.current !== sessionId || session.cancelled) {
+              stopMicrophoneTracks(session.stream);
+              session.stream = null;
+              return;
+            }
+            session.recorderStopped = true;
+            finishVoiceSession(session);
+          };
+          recorder.onerror = () => {
+            if (recordingSessionRef.current !== sessionId || session.cancelled) return;
+            setMessage('Audio recording failed. Any browser transcript remains available.');
+          };
+          recorder.start();
+          stream = null;
+        } catch {
+          session.recorderStopped = true;
+          session.stream = null;
+          setMessage('Audio recording is unavailable. Browser speech recognition can still be used.');
+        }
+      }
+
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          session.recognition = recognition;
+          recognitionRef.current = recognition;
+          recognition.lang = 'en-IN';
+          recognition.interimResults = true;
+          recognition.continuous = true;
+
+          recognition.onstart = () => {
+            if (recordingSessionRef.current !== sessionId || session.cancelled) return;
+            setMessage('Listening... speak naturally in Hindi, English, or both.');
+          };
+
+          recognition.onresult = (event) => {
+            if (recordingSessionRef.current !== sessionId || session.cancelled) return;
+            try {
+              const transcript = getRecognitionTranscript(event);
+              session.recognitionTranscript = transcript;
+              setVoiceText([
+                session.transcriptBase,
+                transcript,
+              ].filter(Boolean).join(' '));
+            } catch {
+              session.recognitionFailed = true;
+              setMessage('Browser transcript could not be safely converted to Latin script. The recorded audio will be used for fallback transcription when you stop.');
+            }
+          };
+
+          recognition.onerror = (event) => {
+            if (recordingSessionRef.current !== sessionId || session.cancelled) return;
+            session.recognitionFailed = true;
+            session.recognitionEnded = true;
+            recognitionRef.current = null;
+            setMessage(getRecognitionErrorMessage(event?.error));
+            finishVoiceSession(session);
+          };
+
+          recognition.onend = () => {
+            if (recordingSessionRef.current !== sessionId || session.cancelled) return;
+            session.recognitionEnded = true;
+            if (!session.recognitionTranscript.trim()) session.recognitionFailed = true;
+            session.recognition = null;
+            recognitionRef.current = null;
+            finishVoiceSession(session);
+          };
+
+          recognition.start();
+        } catch (error) {
+          session.recognitionFailed = true;
+          session.recognitionEnded = true;
+          session.recognition = null;
+          recognitionRef.current = null;
+          setMessage(getRecognitionErrorMessage(error?.error));
+          finishVoiceSession(session);
+        }
+      } else {
+        setMessage('Browser speech recognition is not supported. Recorded audio will be transcribed after you stop, if the service is available.');
+      }
+
       if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
+        stopMicrophoneTracks(stream);
         stream = null;
       }
 
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'en-US';
-      recognition.interimResults = false;
-      recognition.continuous = false;
-      recognitionRef.current = recognition;
-
-      recognition.onstart = () => {
-        if (recordingSessionRef.current !== sessionId || recognitionRef.current !== recognition) return;
-        recordingPhaseRef.current = 'recording';
-        setMessage('Listening... speak now.');
-      };
-
-      recognition.onresult = (event) => {
-        if (recordingSessionRef.current !== sessionId || recognitionRef.current !== recognition) return;
-        const transcript = Array.from(event.results)
-          .map((result) => result[0].transcript)
-          .join(' ');
-        setVoiceText((currentText) => (currentText ? `${currentText} ${transcript}` : transcript));
-      };
-
-      recognition.onerror = (event) => {
-        if (recordingSessionRef.current !== sessionId || recognitionRef.current !== recognition) return;
-        setMessage(getRecognitionErrorMessage(event?.error));
-        cancelVoiceCapture();
-      };
-
-      recognition.onend = () => {
-        if (recordingSessionRef.current !== sessionId || recognitionRef.current !== recognition) return;
-        recognitionRef.current = null;
-        recordingPhaseRef.current = 'idle';
-        recordingSessionRef.current += 1;
-        setIsListening(false);
-        setMessage('Recording finished. Review the transcript or record again.');
-      };
-
-      recognition.start();
-      recordingPhaseRef.current = 'recording';
     } catch (error) {
       if (sessionId === recordingSessionRef.current) {
+        recordingPhaseRef.current = 'idle';
+        setIsListening(false);
         setMessage(getMicrophoneErrorMessage(error));
-        cancelVoiceCapture();
+        const session = voiceSessionRef.current;
+        voiceSessionRef.current = null;
+        disposeVoiceSession(session);
       }
     } finally {
-      if (stream) stream.getTracks().forEach((track) => track.stop());
+      stopMicrophoneTracks(stream);
     }
+  };
+
+  const handleImproveTranscript = () => {
+    const audio = audioRecordingRef.current;
+    if (!audio?.blob || isTranscribingRef.current) return;
+    void requestAudioTranscription(audio.blob, audio.sessionId, 'improve');
   };
 
   const handleAuthSubmit = async (event) => {
@@ -450,7 +727,24 @@ function App() {
   const pageContent = {
     dashboard: <DashboardPage user={user} profile={profile} tasks={tasks} stats={stats} onNavigate={navigate} onStartRecording={handleVoiceCapture} onStatusChange={handleStatusChange} />,
     tasks: <MyTasksPage tasks={tasks} taskForm={taskForm} setTaskForm={setTaskForm} onTaskSubmit={handleTaskSubmit} onStatusChange={handleStatusChange} onDeleteTask={handleDeleteTask} />,
-    voice: <VoiceAIPage voiceText={voiceText} setVoiceText={setVoiceText} isListening={isListening} isVoiceSupported={isVoiceSupported} onVoiceCapture={handleVoiceCapture} onVoiceSubmit={handleVoiceSubmit} />,
+    voice: <VoiceAIPage
+      voiceText={voiceText}
+      onVoiceTextChange={(text) => {
+        try {
+          setVoiceText(romanizeTranscript(text));
+        } catch {
+          setMessage('This text could not be safely converted to Latin script. Your existing transcript is unchanged.');
+        }
+      }}
+      isListening={isListening}
+      isVoiceSupported={isVoiceSupported}
+      isSpeechRecognitionSupported={isSpeechRecognitionSupported}
+      hasRecordedAudio={hasRecordedAudio}
+      isTranscribing={isTranscribing}
+      onVoiceCapture={handleVoiceCapture}
+      onVoiceSubmit={handleVoiceSubmit}
+      onImproveTranscript={handleImproveTranscript}
+    />,
     calendar: <CalendarPage tasks={tasks} />,
     analytics: <AnalyticsPage tasks={tasks} stats={stats} summary={summary} />,
     profile: <ProfilePage user={user} profile={profile} onProfileChange={updateProfile} onLogout={logout} />,

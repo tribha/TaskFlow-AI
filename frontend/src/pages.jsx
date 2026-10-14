@@ -176,15 +176,26 @@ export function MyTasksPage({ tasks, taskForm, setTaskForm, onTaskSubmit, onStat
   );
 }
 
-export function VoiceAIPage({ voiceText, setVoiceText, isListening, isVoiceSupported, onVoiceCapture, onVoiceSubmit }) {
+export function VoiceAIPage({
+  voiceText,
+  onVoiceTextChange,
+  isListening,
+  isVoiceSupported,
+  isSpeechRecognitionSupported,
+  hasRecordedAudio,
+  isTranscribing,
+  onVoiceCapture,
+  onVoiceSubmit,
+  onImproveTranscript,
+}) {
   return (
     <div className="page-content voice-page">
       <section className={`voice-studio ${isListening ? 'is-listening' : ''}`}>
         <div className="studio-copy"><span className="eyebrow">Voice capture</span><h2>Say it. We’ll sort it.</h2><p>Speak naturally about what you need to do. TaskFlow will find the tasks, priorities, and deadlines in your words.</p></div>
-        <div className="microphone-stage"><div className="mic-ring"><span className="mic-glyph" aria-hidden="true">◉</span></div><p className="listening-state">{isListening ? 'Listening now…' : isVoiceSupported ? 'Ready when you are' : 'Voice input unavailable in this browser'}</p><button className={`record-btn ${isListening ? 'listening' : ''}`} onClick={onVoiceCapture} disabled={!isVoiceSupported} type="button"><span aria-hidden="true">{isListening ? '■' : '◉'}</span>{isListening ? 'Stop recording' : 'Start recording'}</button></div>
+        <div className="microphone-stage"><div className="mic-ring"><span className="mic-glyph" aria-hidden="true">◉</span></div><p className="listening-state">{isListening ? 'Listening now…' : isSpeechRecognitionSupported ? 'Ready when you are' : isVoiceSupported ? 'Audio transcription fallback ready' : 'Voice recording unavailable in this browser'}</p><button className={`record-btn ${isListening ? 'listening' : ''}`} onClick={onVoiceCapture} disabled={!isVoiceSupported || isTranscribing} type="button"><span aria-hidden="true">{isListening ? '■' : '◉'}</span>{isListening ? 'Stop recording' : 'Start recording'}</button></div>
       </section>
       <div className="voice-workspace-grid">
-        <section className="panel transcript-panel"><div className="section-heading"><div><span className="eyebrow">Your words</span><h2>Transcript</h2></div><span className="live-indicator"><i />{isListening ? 'Recording' : 'Editable'}</span></div><form onSubmit={onVoiceSubmit} className="transcript-form"><textarea rows="8" value={voiceText} onChange={(event) => setVoiceText(event.target.value)} placeholder="Your transcript will appear here. You can also type or paste a note." /><div className="transcript-footer"><span>{voiceText.trim().split(/\s+/).filter(Boolean).length} words</span><button type="submit" className="primary-btn" disabled={!voiceText.trim()}>Extract tasks <span aria-hidden="true">→</span></button></div></form></section>
+        <section className="panel transcript-panel"><div className="section-heading"><div><span className="eyebrow">Your words</span><h2>Transcript</h2></div><span className="live-indicator"><i />{isTranscribing ? 'Transcribing' : isListening ? 'Recording' : 'Editable'}</span></div><form onSubmit={onVoiceSubmit} className="transcript-form"><textarea rows="8" value={voiceText} onChange={(event) => onVoiceTextChange(event.target.value)} placeholder="Your transcript will appear here. You can also type or paste a note." />{hasRecordedAudio && <div className="transcript-audio-actions"><p>Improve transcript sends the recorded audio to the server for transcription.</p><button type="button" className="secondary-btn" onClick={onImproveTranscript} disabled={isTranscribing}>{isTranscribing ? 'Transcribing…' : voiceText.trim() ? 'Improve transcript' : 'Retry transcription'}</button></div>}<div className="transcript-footer"><span>{voiceText.trim().split(/\s+/).filter(Boolean).length} words</span><button type="submit" className="primary-btn" disabled={!voiceText.trim()}>Extract tasks <span aria-hidden="true">→</span></button></div></form></section>
         <aside className="panel voice-help-panel"><span className="eyebrow">Try a prompt</span><h2>Speak like you think.</h2><div className="command-example"><span className="quote-mark">“</span><p>Finish my project report by Thursday. It’s high priority, and I also need to call Maya about the research notes.</p></div><div className="workflow-list"><span><b>01</b> Capture a voice note</span><span><b>02</b> Review your transcript</span><span><b>03</b> Extract tasks to your board</span></div></aside>
       </div>
     </div>
