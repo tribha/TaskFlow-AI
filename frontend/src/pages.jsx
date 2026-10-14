@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import Icon from './icons';
 
 const statuses = [
   { value: 'todo', label: 'To do' },
@@ -99,9 +100,9 @@ export function DashboardPage({ user, profile, tasks, stats, onNavigate, onStart
           <div className="interest-row">{(profile.interests || []).slice(0, 4).length ? profile.interests.slice(0, 4).map((interest) => <span className="interest-chip" key={interest}>{interest}</span>) : <span className="muted-copy">Add your interests in profile settings</span>}</div>
         </article>
         <article className="voice-quick-action">
-          <div className="voice-orbit" aria-hidden="true"><span>◉</span></div>
+          <div className="voice-orbit" aria-hidden="true"><Icon name="mic" /></div>
           <div className="voice-quick-copy"><span className="eyebrow">Voice AI</span><h3>Tell TaskFlow what you need to do.</h3><p>Capture a thought and turn it into an actionable task.</p></div>
-          <button className="voice-quick-button" onClick={() => { onNavigate('voice'); onStartRecording(); }}><span aria-hidden="true">◉</span> Start recording</button>
+          <button className="voice-quick-button" onClick={() => { onNavigate('voice'); onStartRecording(); }}><Icon name="mic" /> Start recording</button>
         </article>
       </section>
 
@@ -192,7 +193,7 @@ export function VoiceAIPage({
     <div className="page-content voice-page">
       <section className={`voice-studio ${isListening ? 'is-listening' : ''}`}>
         <div className="studio-copy"><span className="eyebrow">Voice capture</span><h2>Say it. We’ll sort it.</h2><p>Speak naturally about what you need to do. TaskFlow will find the tasks, priorities, and deadlines in your words.</p></div>
-        <div className="microphone-stage"><div className="mic-ring"><span className="mic-glyph" aria-hidden="true">◉</span></div><p className="listening-state">{isListening ? 'Listening now…' : isSpeechRecognitionSupported ? 'Ready when you are' : isVoiceSupported ? 'Audio transcription fallback ready' : 'Voice recording unavailable in this browser'}</p><button className={`record-btn ${isListening ? 'listening' : ''}`} onClick={onVoiceCapture} disabled={!isVoiceSupported || isTranscribing} type="button"><span aria-hidden="true">{isListening ? '■' : '◉'}</span>{isListening ? 'Stop recording' : 'Start recording'}</button></div>
+        <div className="microphone-stage"><div className="mic-ring"><span className="mic-glyph" aria-hidden="true"><Icon name="mic" size={24} /></span></div><p className="listening-state">{isListening ? 'Listening now…' : isSpeechRecognitionSupported ? 'Ready when you are' : isVoiceSupported ? 'Audio transcription fallback ready' : 'Voice recording unavailable in this browser'}</p><button className={`record-btn ${isListening ? 'listening' : ''}`} onClick={onVoiceCapture} disabled={!isVoiceSupported || isTranscribing} type="button"><Icon name={isListening ? 'stop' : 'mic'} size={17} />{isListening ? 'Stop recording' : 'Start recording'}</button></div>
       </section>
       <div className="voice-workspace-grid">
         <section className="panel transcript-panel"><div className="section-heading"><div><span className="eyebrow">Your words</span><h2>Transcript</h2></div><span className="live-indicator"><i />{isTranscribing ? 'Transcribing' : isListening ? 'Recording' : 'Editable'}</span></div><form onSubmit={onVoiceSubmit} className="transcript-form"><textarea rows="8" value={voiceText} onChange={(event) => onVoiceTextChange(event.target.value)} placeholder="Your transcript will appear here. You can also type or paste a note." />{hasRecordedAudio && <div className="transcript-audio-actions"><p>Improve transcript sends the recorded audio to the server for transcription.</p><button type="button" className="secondary-btn" onClick={onImproveTranscript} disabled={isTranscribing}>{isTranscribing ? 'Transcribing…' : voiceText.trim() ? 'Improve transcript' : 'Retry transcription'}</button></div>}<div className="transcript-footer"><span>{voiceText.trim().split(/\s+/).filter(Boolean).length} words</span><button type="submit" className="primary-btn" disabled={!voiceText.trim()}>Extract tasks <span aria-hidden="true">→</span></button></div></form></section>
@@ -288,7 +289,7 @@ export function ProfilePage({ user, profile, onProfileChange, onLogout }) {
       </section>
       <section className="panel profile-interests"><div className="section-heading"><div><span className="eyebrow">Make it personal</span><h2>Interests & focus</h2></div></div><div className="interest-row profile-interest-list">{(profile.interests || []).map((interest) => <span className="interest-chip removable-chip" key={interest}>{interest}<button type="button" onClick={() => onProfileChange('interests', profile.interests.filter((item) => item !== interest))} aria-label={`Remove ${interest}`}>×</button></span>)}{!profile.interests?.length && <span className="muted-copy">Add a few things you’re interested in.</span>}</div><form className="interest-form" onSubmit={addInterest}><input value={interestInput} onChange={(event) => setInterestInput(event.target.value)} placeholder="Add an interest" aria-label="New interest" /><button className="secondary-btn" type="submit" disabled={!interestInput.trim()}>Add interest <span aria-hidden="true">＋</span></button></form></section>
       <section className="panel preferences-panel"><div className="section-heading"><div><span className="eyebrow">Your experience</span><h2>Personal preferences</h2></div></div><label>What would you like to focus on?<textarea rows="3" value={profile.preferences} onChange={(event) => onProfileChange('preferences', event.target.value)} placeholder="For example: keep my study tasks visible, or help me stay on top of deadlines." /></label><p className="field-note">These preferences are stored locally and do not change task processing.</p></section>
-      <section className="panel account-panel"><div><span className="eyebrow">Account</span><h2>Login & security</h2><p>Signed in as <strong>{user.email}</strong></p><p className="field-note">Your account access is managed by your existing TaskFlow login.</p></div><button className="danger-btn" onClick={onLogout} type="button"><span aria-hidden="true">↪</span> Logout</button></section>
+      <section className="panel account-panel"><div><span className="eyebrow">Account</span><h2>Login & security</h2><p>Signed in as <strong>{user.email}</strong></p><p className="field-note">Your account access is managed by your existing TaskFlow login.</p></div><button className="danger-btn" onClick={onLogout} type="button"><Icon name="logOut" /> Logout</button></section>
     </div>
   );
 }

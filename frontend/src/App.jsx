@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
+import Icon from './icons';
 import {
   AnalyticsPage,
   CalendarPage,
@@ -39,11 +40,11 @@ const defaultProfile = {
 };
 
 const navigation = [
-  { id: 'dashboard', label: 'Dashboard', icon: '◫' },
-  { id: 'tasks', label: 'My Tasks', icon: '☷' },
-  { id: 'voice', label: 'Voice AI', icon: '◉' },
-  { id: 'calendar', label: 'Calendar', icon: '▦' },
-  { id: 'analytics', label: 'Analytics', icon: '⌁' },
+  { id: 'dashboard', label: 'Dashboard', icon: 'layoutDashboard' },
+  { id: 'tasks', label: 'My Tasks', icon: 'listChecks' },
+  { id: 'voice', label: 'Voice AI', icon: 'mic' },
+  { id: 'calendar', label: 'Calendar', icon: 'calendarDays' },
+  { id: 'analytics', label: 'Analytics', icon: 'chartNoAxesCombined' },
 ];
 
 const pageIds = [...navigation.map((item) => item.id), 'profile'];
@@ -761,13 +762,13 @@ function App() {
         <nav className="main-nav" aria-label="Main navigation">
           {navigation.map((item) => (
             <button key={item.id} className={`nav-link ${currentPage === item.id ? 'active' : ''}`} onClick={() => navigate(item.id)}>
-              <span className="nav-icon" aria-hidden="true">{item.icon}</span>{item.label}
+              <span className="nav-icon"><Icon name={item.icon} /></span>{item.label}
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <button className={`nav-link ${currentPage === 'profile' ? 'active' : ''}`} onClick={() => navigate('profile')}><span className="nav-icon" aria-hidden="true">⚙</span>Settings</button>
-          <button className="nav-link logout-link" onClick={logout}><span className="nav-icon" aria-hidden="true">↪</span>Logout</button>
+          <button className={`nav-link ${currentPage === 'profile' ? 'active' : ''}`} onClick={() => navigate('profile')}><span className="nav-icon"><Icon name="settings2" /></span>Settings</button>
+          <button className="nav-link logout-link" onClick={logout}><span className="nav-icon"><Icon name="logOut" /></span>Logout</button>
           <button className="sidebar-user" onClick={() => navigate('profile')}>
             <Avatar name={profile.name || user.name} src={profile.avatar} />
             <span><strong>{profile.name || user.name}</strong><small>View profile</small></span>
@@ -778,7 +779,7 @@ function App() {
 
       <main className="main-area">
         <header className="page-header">
-          <button className="mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><span>☰</span></button>
+          <button className="mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Icon name="menu" /></button>
           <div><p className="eyebrow">TaskFlow AI / Workspace</p><h1>{pageTitles[currentPage][0]}</h1><p className="page-subtitle">{pageTitles[currentPage][1]}</p></div>
           <button className="header-profile" onClick={() => navigate('profile')} aria-label="Open profile settings"><Avatar name={profile.name || user.name} src={profile.avatar} /><span>{profile.name || user.name}</span><span className="chevron">⌄</span></button>
         </header>
